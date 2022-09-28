@@ -308,7 +308,11 @@ OpenConnect usually has problems connecting on Apple products. You can use [Algo
 You can download and  use this file as `config.cfg` for the Algo installation: https://pastebin.com/raw/iARF0fGL  
 This configuration file includes 100 users by default and has WireGuard and IPSec enabled. 
 
-### 3.7 Install and configure a Tor bridge
+### 3.7 Tor
+
+Tor connections are unstable. There are two methods for getting it work, and each method might work at different times. You can do both and test their connection to see which one works for you best.
+
+#### 3.7.1 Method 1: Install and configure a Tor bridge inside Iran
 
 Installing a Tor bridge will help people connect to Tor through Machine B which is easily accessible from within Iran. First make sure that the VPN is connnected (step 3.4). Then install Tor from the Ubuntu repositories to get an initial Tor connection up and runnning, then add the official Tor repository and reinstall/update Tor from the official repo.
 
@@ -392,6 +396,84 @@ Bridge obfs4 200.0.0.0:9888 Unnamed xxxxxxxx cert=yyyyyyyy iat-mode=0
 
 > Currently the Tor fails to confirm reachability of the bridge and you'll see `Your server has not managed to confirm reachability for its ORPort(s)` in `/var/log/syslog`. But you can connect to your bridge by specifying a custom bridge in Orbot or Tor Browser.
 
+#### 3.7.2  Method 2: Proxy Tor traffic from Iran to a bridge outside Iran
+
+This method was developed by [@meskio](https://github.com/meskio) and originally published [here](https://github.com/net4people/bbs/issues/127). We're just changing the vocabulary so that it matches the rest of this document.
+
+First, you need to set up a bridge on Machine A (outside Iran). We'll do this using Docker - install it if you haven't already by following the instructions here https://docs.docker.com/engine/install/ubuntu/#set-up-the-repository
+
+```bash
+root@100.0.0.0:~# mkdir bridge
+root@100.0.0.0:~# cd bridge
+root@100.0.0.0:~/bridge# wget https://gitlab.torproject.org/tpo/anti-censorship/docker-obfs4-bridge/-/raw/main/docker-compose.yml
+```
+
+Edit `bridge/.env` with the following content, changing `you@email.com` with an email address that you have access to but cannot be traced back to you:
+
+```ini
+# Set required variables
+OR_PORT=3344
+PT_PORT=3355
+EMAIL=your@email.com
+
+# If you want, you could change the nickname of your bridge
+#NICKNAME=DockerObfs4Bridge
+
+# Configure the bridge so it will not be distributed by bridgedb:
+OBFS4_ENABLE_ADDITIONAL_VARIABLES=1
+OBFS4V_BridgeDistribution=none
+```
+
+Start the bridge:
+
+```bash
+root@100.0.0.0:~/bridge# docker compose up -d
+```
+
+Get it's bridge line:
+
+```bash
+root@100.0.0.0:~/bridge# docker exec bridge-obfs4-bridge-1 get-bridge-line
+obfs4 100.0.0.0:3355 AAABBBBCCCDDDD cert=abcdx iat-mode=0
+```
+
+Then on Machine B (inside Iran), you have two options for forwarding the Tor traffic to your bridge on Machine A:
+
+1. Using SSH port forwarding
+2. Using kcptun
+
+##### Using SSH port forwarding
+
+```bash
+root@200.0.0.0:~# ssh -L 4457:127.0.0.1:4457 100.0.0.0:3355
+```
+
+##### Using kcptun
+
+kcptun is a network enhancement proxy that tunnel a stream based traffic over a UDP transport protocol.
+
+Run the following commands on Machine A:
+
+```bash
+root@100.0.0.0~# mkdir kcptun
+root@100.0.0.0~# cd kcptun
+root@100.0.0.0~/kcptun# wget https://github.com/xtaci/kcptun/releases/download/v20220628/kcptun-linux-amd64-20220628.tar.gz
+root@100.0.0.0~/kcptun# server_linux_amd64 -t "127.0.0.1:3355" -l "0.0.0.0:7923" -mtu 1400 --nocomp -sndwnd 16384 --rcvwnd 16384 --datashard 0 --parityshard 0 --crypt aes --smuxver 2 --key "MY_PRE_SHARED_KEY"
+```
+
+Make sure to replace `MY_PRE_SHARED_KEY` for the `--key` parameter with a randomly generated string, and write it down. We'll need this value in a moment.
+
+and then on Machine B:
+
+```bash
+root@200.0.0.0~# mkdir kcptun
+root@200.0.0.0~# cd kcptun
+root@200.0.0.0~/kcptun# wget https://github.com/xtaci/kcptun/releases/download/v20220628/kcptun-linux-amd64-20220628.tar.gz
+root@200.0.0.0~/kcptun# client_linux_amd64 -l "0.0.0.0:3355" -r "100.0.0.0:7923" -mtu 1400 --nocomp -sndwnd 16384 --rcvwnd 16384 --datashard 0 --parityshard 0 --crypt aes --smuxver 2 --key "MY_PRE_SHARED_KEY"
+```
+
+Replace `MY_PRE_SHARED_KEY` with the same random string from the previous step. Also change `100.0.0.0` with the IP  address of Machine A.
+
 ### 3.8 Set up a standalone Snowflake Proxy
 
 You can also set up a standalone Snowflake proxy on Machine B to help censored users connect to the Tor network. 
@@ -431,6 +513,18 @@ Algo saves the connection profile configuration files in `/path/to/algo/configs/
 
 ### 4.3 Tor
 
-In Orbot or Tor Browser, enable `Use Bridges` and select the `Custom Bridges` option, and enter the bridge line you constructed in section 3.7 in the `Paste Bridges` section. You should now be able to connect and use Tor in seconds.
+#### 4.3.1 Bridge inside Iran
 
+> This is for using the bridge created in section 3.7.1
 
+In Orbot or Tor Browser, enable `Use Bridges` and select the `Custom Bridges` option, and enter the bridge line you constructed in section 3.7.1 in the `Paste Bridges` section. You should now be able to connect and use Tor in seconds.
+
+#### 4.3.2 Bridge outside Iran with a proxy inside Iran
+
+> This is for using the bridge created in section 3.7.2
+
+distribute the bridgeline you got in section 3.7.2, replacing the IP address with the one of Machine B (200.0.0.0):
+
+```
+obfs4 200.0.0.0:3355 AAABBBBCCCDDDD cert=abcdx iat-mode=0
+```

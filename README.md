@@ -2,6 +2,7 @@
 [![Twitter](https://img.shields.io/twitter/url/https/twitter.com/fold_left.svg?style=social&label=Follow%20%40InternetForIran)](https://twitter.com/InternetForIran)
 
 ## Introduction
+
 Internet is heavily restricted on mobile (3G/4G) and residential (ADSL/TD-LTE) networks and connecting to VPNs and websites outside Iran is close to impossible, Tor is not working reliably as the Tor bridges are outside Iran and mostly inaccessible to people inside Iran. On the other hand, the government has not yet blocked the Internet access on machines located inside Iranian data centers, and people can easily connect to these websites and servers.
 
 ### How can I help?
@@ -17,7 +18,8 @@ We need servers and we need help setting those servers up.
 | Regular person in Iran                                   | **We do not recommend you purchasing servers from Iranian data centers for setting up VPN services  yourself. The server IP address which you will share with your friends and family can be easily traced back to your identity.**<br /> Send this document to your technical friends. Ask your family members outside Iran to purchase server. Retweet and like our tweets and get the word out. |
 | VPN provider outside Iran                                | We need VPNs outside Iran (helps us replace Machine A below with a VPN). Please send us VPN connection details (preferably without data usage limits, OpenVPN and OpenConnect work best) by emailing InternetForIran@proton.me. |
 | Hacker group                                             | If you compromise a server inside Iran and gain ssh access to, use this guide to set up a VPN server on and share the details with us and your followers. |
-| Developer / Sys Admin / DevOps engineer anywhere         | We have reports that V2Ray VMess and ShadowSocks are working inside Iran even at times when most other tools and protocols don't. We haven't been able to reliably deploy and test this (there are many configuration options and it's not clear which methods are working). Please create an issue or send a PR if you know how it works and how to deploy it. <br />We also need your help with improving this document: Do you see a potential security issue? Can you help make the deployment process easier or automate the installation through the use of docker containers and shell scripts? Contributions are welcome :) |
+| Developer / Sys Admin / DevOps engineer anywhere         | We have reports that V2Ray VMess and ShadowSocks are working inside Iran even at times when most other tools and protocols don't. We haven't been able to reliably deploy and test this (there are many configuration options and it's not clear which methods are working). Please create an issue or send a PR if you know how it works and how to deploy it. <br />We also need your help with improving this document: Do you see a potential security issue? Can you help make the deployment process easier or automate the installation through the use of docker containers and shell scri
+pts? Contributions are welcome :) |
 
 ### Overview
 
@@ -311,13 +313,13 @@ This configuration file includes 100 users by default and has WireGuard and IPSe
 Installing a Tor bridge will help people connect to Tor through Machine B which is easily accessible from within Iran. First make sure that the VPN is connnected (step 3.4). Then install Tor from the Ubuntu repositories to get an initial Tor connection up and runnning, then add the official Tor repository and reinstall/update Tor from the official repo.
 
 ```bash
-root@200.0.0.0:~# apt install tor
+root@200.0.0.0:~# apt install tor 
 root@200.0.0.0:~# apt install apt-transport-tor
 root@200.0.0.0:~# CODENAME=`lsb_release -c | grep Codename | cut -d: -f2 | tr -d [:space:] `
 root@200.0.0.0:~# ARCH=`dpkg --print-architecture`
 root@200.0.0.0:~# echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/tor-archive-keyring.gpg] tor://apow7mjfryruh65chtdydfmqfpj5btws7nbocgtaovhvezgccyjazpqd.onion/torproject.org $CODENAME main" > /etc/apt/sources.list.d/tor.list
 root@200.0.0.0:~# apt update
-root@200.0.0.0:~# apt install tor
+root@200.0.0.0:~# apt install tor obfs4proxy
 ```
 
 Now empty out `/etc/tor/torrc` and open it using an editor:
@@ -353,11 +355,40 @@ ContactInfo YOU@EMAIL.COM
 
 ```
 
-Restart Tor:
+Restart Tor and get your bridge line:
 
 ```bash
 root@200.0.0.0:~# systemctl restart tor
+root@200.0.0.0:~# cat /var/lib/tor/pt_state/obfs4_bridgeline.txt 
+# obfs4 torrc client bridge line
+#
+# This file is an automatically generated bridge line based on
+# the current obfs4proxy configuration.  EDITING IT WILL HAVE
+# NO EFFECT.
+#
+# Before distributing this Bridge, edit the placeholder fields
+# to contain the actual values:
+#  <IP ADDRESS>  - The public IP address of your obfs4 bridge.
+#  <PORT>        - The TCP/IP port of your obfs4 bridge.
+#  <FINGERPRINT> - The bridge's fingerprint.
+
+Bridge obfs4 <IP ADDRESS>:<PORT> <FINGERPRINT> cert=yyyyyyyy iat-mode=0
 ```
+
+Copy `Bridge obfs4 <IP ADDRESS>:<PORT> <FINGERPRINT> cert=xxxxxxxx iat-mode=0` and replace `<IP ADDRESS` with `200.0.0.0` (Machine B IP address), replace `<PORT>` the port specified for `ServerTransportListenAddr` in `/etc/tor/torrc` (9888 by default), and `<FINGERPRINT>` with the output of this command:
+
+```bash
+root@200.0.0.0:~# cat /var/lib/tor/fingerprint
+Unnamed xxxxxxxx
+```
+
+The bridge line should look like this now:
+
+```
+Bridge obfs4 200.0.0.0:9888 Unnamed xxxxxxxx cert=yyyyyyyy iat-mode=0
+```
+
+
 
 > Currently the Tor fails to confirm reachability of the bridge and you'll see `Your server has not managed to confirm reachability for its ORPort(s)` in `/var/log/syslog`. But you can connect to your bridge by specifying a custom bridge in Orbot or Tor Browser.
 
@@ -400,6 +431,6 @@ Algo saves the connection profile configuration files in `/path/to/algo/configs/
 
 ### 4.3 Tor
 
-In Orbot or Tor Browser, enable `Use Bridges` and select the `Custom Bridges` option, and enter `200.0.0.0:8888` in the `Paste Bridges` section. You should now be able to connect and use Tor in seconds.
+In Orbot or Tor Browser, enable `Use Bridges` and select the `Custom Bridges` option, and enter the bridge line you constructed in section 3.7 in the `Paste Bridges` section. You should now be able to connect and use Tor in seconds.
 
 
